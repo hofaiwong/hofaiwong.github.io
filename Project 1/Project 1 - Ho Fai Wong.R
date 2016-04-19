@@ -8,12 +8,18 @@ library(dplyr)
 library(zoo)
 library(ggplot2)
 library(reshape2)
-setwd("~/Desktop/Project 1")
+# install.packages("devtools")
+library(devtools)
+#install_github('arilamstein/choroplethrZip@v1.5.0')
+library(choroplethr)
+library(choroplethrZip)
+library(dplyr)
+library(zipcode)
+setwd("~/Desktop/hofaiwong.github.io/Project 1")
 raw = read.csv("DOHMH_New_York_City_Restaurant_Inspection_Results.csv", stringsAsFactors = FALSE)
 raw.df = tbl_df(raw)
 names(raw.df) = tolower(names(raw.df))
 raw.df = rename(raw.df, cuisine = cuisine.description)
-
 raw.df$inspection.date = as.Date(raw.df$inspection.date, "%m/%d/%Y")
 raw.df$grade.date = as.Date(raw.df$grade.date, "%m/%d/%Y")
 raw.df$record.date = as.Date(raw.df$record.date, "%m/%d/%Y")
@@ -21,6 +27,7 @@ raw.df$phone = as.double(raw.df$phone)
 raw.df$boro = factor(raw.df$boro, levels(factor(raw.df$boro))[c(1:3,5:6,4)])
 levels(raw.df$boro) = c('Bronx','Brooklyn','Manhattan','Queens','Staten Island','Missing')
 raw.df$cuisine = factor(raw.df$cuisine, levels(factor(raw.df$cuisine))[c(1:55,57,59:84,58,56)]) #Moving N/A and Other to the bottom of cuisine factors
+raw.df$zipcode = clean.zipcodes(raw.df$zipcode) #Turn zip to string with clean format e.g. preceding 0s
 
 raw.df$action = gsub(pattern = "Violations were cited in the following area\\(s\\).", replacement = "violations", x = raw.df$action, ignore.case = F)
 raw.df$action = gsub(pattern = "No violations were recorded at the time of this inspection.", replacement = "no violations", x = raw.df$action, ignore.case = F)
@@ -28,49 +35,72 @@ raw.df$action = gsub(pattern = "Establishment re-opened by DOHMH", replacement =
 raw.df$action = gsub(pattern = "Establishment Closed by DOHMH.  violationsand those requiring immediate action were addressed.", replacement = "closed", x = raw.df$action, ignore.case = F)
 raw.df$action = gsub(pattern = "Establishment re-closed by DOHMH", replacement = "reclosed", x = raw.df$action, ignore.case = F)
 
-raw.df$boro[raw.df$zipcode==11249] = 'Brooklyn' #Fill missing data
+raw.df$boro[raw.df$zipcode==11249] = 'Brooklyn' #Fill missing data...
+raw.df = raw.df[raw.df$zipcode!='07005',] #Eliminat NJ inspection...
 raw.df = raw.df[raw.df$boro != 'Missing',] #Eliminate remaining rows with boro == 'Missing'; confirmed that none are in NYC
 raw.df = raw.df[raw.df$inspection.date > '1900-01-01',] #Eliminate rows where the restaurant hasn't been inspected yet
 raw.df = raw.df[!is.na(raw.df$score),] #Eliminate rows without a score
 raw.df = raw.df[raw.df$score >= 0,] #Eliminate rows with a negative score ----> PENDING
 
 
-##########################
-###  Latest by borough ###
-##########################
+###########################
+###  Scores by borough  ###
+###########################
+
+#Creating table for unique restaurants
+restaurants = unique(select(raw.df, camis, boro, zipcode, cuisine))
+#ggplot(data = restaurants, aes(x=reorder(boro, boro, function(x)-length(x)))) + geom_bar()
 
 #Creating table for unique inspections
 inspections = unique(select(raw.df, camis, boro, zipcode, cuisine, inspection.date, action, score))
 inspections$yearmon = as.Date(paste("1",strftime(inspections$inspection.date, "%m"), strftime(inspections$inspection.date, "%Y"), sep="."), format="%d.%m.%Y")
 inspections$new_grade = ifelse(inspections$score < 0, 'Negative', ifelse(latest$score < 14 , 'A', ifelse(latest$score < 28, 'B', 'C'))) #Assign grades based on scores (existing data may have score but no grade)
+#ggplot(data = inspections, aes(x=reorder(boro, boro, function(x)-length(x)))) + geom_bar()
 
 #Creating table for latest scores only
 latest = merge(aggregate(inspection.date ~ camis, inspections, max), inspections)
 
-#Current graphs by borough
+#Visualize current state by borough
+ggplot(data=latest, aes(x=reorder(boro, boro, function(x)-length(x)))) + 
+  geom_bar(aes(fill=new_grade), position='dodge') +
+  labs(title='Restaurants by latest grades and borough', x='Borough', y='Restaurants') +
+  scale_fill_discrete(name="Latest \ngrades")
 
-#ggplot(data=latest, aes(x=boro)) + geom_bar(aes(fill=new_score))
-#ggplot(data=latest, aes(x=boro)) + geom_bar(aes(fill=new_score), position = 'fill')
-#ggplot(data=latest, aes(x=boro)) + geom_bar(aes(fill=new_score), position = 'dodge')
-#ggplot (data = latest, aes(x = boro, y = score)) + geom_boxplot()
-#ggplot (data = latest, aes(x=score)) + geom_histogram(binwidth = 2, aes(fill = boro))
-#ggplot (data = latest, aes(x=score)) + geom_histogram(binwidth = 2, aes(fill = new_score))
+ggplot(data=latest, aes(x=reorder(boro, boro, function(x)-length(x)), y=score)) + 
+  geom_boxplot() + 
+  labs(title='Latest scores by borough', x='Borough', y='Latest scores')
 
-scoreByBoro.gg = ggplot (data = latest[latest$boro != 'Missing',], aes (x = score)) + 
-  geom_freqpoly(aes(color = boro), binwidth=2) + 
-  coord_cartesian(xlim = c(0,40)) + 
-  xlab("Score") + ylab("Count of establishments") + 
-  scale_colour_discrete(name="Borough") + 
-  ggtitle("Establishments by latest score and borough")
-scoreByBoro.gg
+#ggplot(data=latest, aes(x=boro)) + geom_bar(aes(fill=new_grade))
+#ggplot(data=latest, aes(x=boro)) + geom_bar(aes(fill=new_grade), position = 'fill')
+#ggplot (data=latest, aes(x=score)) + geom_histogram(binwidth = 2, aes(fill = boro))
+#ggplot (data=latest, aes(x=score)) + geom_histogram(binwidth = 2, aes(fill = new_grade))
 
-scoreDensityByBoro.gg = ggplot (data = latest[latest$boro != 'Missing',], aes (x = score)) + 
-  geom_density(aes(color = boro)) + 
-  coord_cartesian(xlim = c(0,40)) +
-  xlab("Score") + ylab("Density") + 
-  scale_colour_discrete(name="Borough") + 
-  ggtitle("Density of establishments by latest score and borough")
-scoreDensityByBoro.gg
+ggplot(data=latest, aes(x = score)) + 
+  geom_freqpoly(aes(color=boro), binwidth=2) + 
+  coord_cartesian(xlim=c(0,40)) + 
+  labs(title='Restaurants by latest score and borough', x='Score', y='Restaurants') + 
+  scale_colour_discrete(name="Borough")
+
+ggplot(data=latest, aes (x=score)) + 
+  geom_density(aes(color=boro)) + 
+  coord_cartesian(xlim=c(0,40)) +
+  labs(title='Density of restaurants by latest score and borough', x='Score', y='Density') + 
+  scale_colour_discrete(name="Borough")
+
+#Map average scores by zipcode
+avgbyzip = latest %>% 
+  group_by(., zipcode) %>%
+  summarise(., mean(score))
+colnames(avgbyzip) = c('region','value')
+scored_zips = unique(avgbyzip$region) #zipcodes that appear in original data
+missing_zips = c('10048','10055', '10057', '10104', '10105', '10106', '10107', '10118', '10121', '10123', '10155', '10166', '10175', '10176', '10178', '10179', '10281', '10285', '10317', '11242', '11249', '11256', '11352') #zipcodes that are not in choloroplethr package
+adjusted_zips = scored_zips[!(scored_zips %in% missing_zips)] #zipcodes that appear in original data and in choloroplethr package
+
+zip_choropleth(avgbyzip, 
+               zip_zoom = adjusted_zips,
+               title="Average of latest scores by zipcode",
+               legend="Average scores",
+               num_colors = 5)
 
 
 
@@ -78,56 +108,74 @@ scoreDensityByBoro.gg
 ####     Closings     ####
 ##########################
 
-###Distinct closings, reclosings, reopenings and inspections tables
-closings = filter(inspections, action %in% c('closed','reclosed'))
-reclosings = filter(inspections, action == 'reclosed')
-#reopenings = unique(inspections[grep('reopen',inspections$action, ignore.case = T),])
+###Summarise closings, reclosings and inspections by borough and month/year
+inspectionsByMonth = inspections %>%
+  group_by(., boro, yearmon) %>%
+  summarise(., inspections=n())
 
-cntInspections = summarize(group_by(inspections, boro, yearmon), inspections = n())
-cntClosings = summarize(group_by(closings, boro, yearmon), closings = n())
-cntReclosings = summarize(group_by(reclosings, boro, yearmon),reclosings = n())
-#cntReopenings = summarize(group_by(reopenings, boro, yearmon), reopenings = n())
+closingsByMonth = filter(inspections, action %in% c('closed','reclosed')) %>%
+  group_by(., boro, yearmon) %>%
+  summarise(., closings=n())
 
+reclosingsByMonth = filter(inspections, action=='reclosed') %>%
+  group_by(., boro, yearmon) %>%
+  summarise(., reclosings=n())
 
-###Closings by borough
-closingRatio = cbind(summarize(group_by(cntClosings, boro), closings = sum(closings)), 
-                     summarize(group_by(cntReclosings, boro), reclosings = sum(reclosings))[,2],
-                     summarize(group_by(filter(cntInspections, boro != 'Missing'), boro), inspections = sum(inspections))[,2])
-closingRatio = mutate(closingRatio, closingRatio = closings / inspections)
+###Ratio of inspections that lead to closings by borough
+inspectionClosingSummary = cbind(summarize(group_by(closingsByMonth, boro), closings = sum(closings)), 
+                     summarize(group_by(reclosingsByMonth, boro), reclosings = sum(reclosings))[,2],
+                     summarize(group_by(inspectionsByMonth, boro), inspections = sum(inspections))[,2])
+inspectionClosingSummary = mutate(inspectionClosingsSummary, ratio = closings / inspections)
 
-closingRatio.gg = ggplot (data = closingRatio[closingRatio$boro != 'Missing',], aes (x = reorder(boro, -ratio), y = ratio)) + 
+inspectionClosingRatio.gg = ggplot(data=inspectionClosingSummary, aes(x=reorder(boro, -ratio), y=ratio)) + 
   geom_bar(stat='identity') +
-  xlab("Borough") + ylab("Inspection closing ratio") + 
-  ggtitle('Inspection closing ratio by Borough')
-closingRatio.gg #Overall inspection closing ratio by borough
+  labs(title='Inspection closing ratio by borough', x='Borough', y='Inspection closing ratio')
+inspectionClosingRatio.gg #Overall inspection closing ratio by borough
 
-cntClosingsStats = merge(summarize(group_by(unique(select(closings, camis, boro)), boro), unique_camis_closed = n()),
-      summarize(group_by(unique(select(inspections, camis, boro)), boro), total_camis = n()),
+###Ratio of unique restaurant that closed by borough
+restaurantClosingSummary = merge(
+      summarize(group_by(unique(inspections[inspections$action %in% c('closed','reclosed'),c('camis','boro')]), boro), unique_camis_closed = n()),
+      summarize(group_by(unique(inspections[,c('camis','boro')]), boro), total_camis = n()),
       by = 'boro')
-cntClosingsStats$ratio = cntClosingsStats$unique_camis_closed / cntClosingsStats$total_camis
-cntClosingsStats #Closings by count of camis and % of repeat offenders
+restaurantClosingSummary$ratio = restaurantClosingSummary$unique_camis_closed / restaurantClosingSummary$total_camis
+restaurantClosingSummary #Closings by count of camis and % of repeat offenders
+
+restaurantClosingRatio.gg = ggplot(data=restaurantClosingSummary, aes(x=reorder(boro, -ratio), y=ratio)) + 
+  geom_bar(stat='identity') +
+  labs(title='Restaurant closing ratio by borough', x='Borough', y='Restaurant closing ratio')
+restaurantClosingRatio.gg #Overall restaurant closing ratio by borough
 
 
-##Reclosings summary
-reclosingsByID = dcast(summarize(group_by(closings, camis, boro, action), n()), camis + boro ~ temp$action)
+##########################
+####     Relosings    ####
+##########################
 
-closedByBoro = group_by(reclosingsByID[reclosingsByID$closed >0,], boro) %>%
+temp =  inspections[inspections$action %in% c('closed','reclosed'),] %>%
+  group_by(., camis, boro, action) %>%
+  summarize(., count = n())
+  
+reclosingsByID = dcast(temp, camis + boro ~ temp$action)
+
+closedByBoro = group_by(reclosingsByID[reclosingsByID$closed > 0,], boro) %>%
   summarize(., closed = n())
 closedOnceByBoro = group_by(reclosingsByID[reclosingsByID$closed == 1,], boro) %>%
   summarize(., closed = n())
 closedMoreThanOnceByBoro = group_by(reclosingsByID[reclosingsByID$closed > 1,], boro) %>%
   summarize(., closed = n())
 
-reclosingsByBoro = cbind(closedByBoro, closedOnceByBoro[,2], closedMoreThanOnceByBoro[,2])
+#Combine into one table
+reclosingsByBoro = cbind(closedByBoro, closedOnceByBoro[,2], closedMoreThanOnceByBoro[,2]) 
 colnames(reclosingsByBoro) = c('boro','total_closed','closed_once','closed_more_than_once')
 reclosingsByBoro$ratioClosedMoreThanOnce = reclosingsByBoro$closed_more_than_once / reclosingsByBoro$total_closed
+reclosingsByBoro
 
-ggplot(data = reclosingsByBoro, aes(x=boro))
 reclosingRatio.gg = ggplot (data = reclosingsByBoro[!is.na(reclosingsByBoro$boro),], aes (x = reorder(boro, -ratioClosedMoreThanOnce), y = ratioClosedMoreThanOnce)) + 
   geom_bar(stat='identity') +
   xlab("Borough") + ylab("Repeat closing ratio") + 
   ggtitle('Ratio of repeat closures by Borough')
 reclosingRatio.gg #Ratio of establishments closed more than once by borough
+
+
 
 
 ###Graphs for closings and inspections over time by borough
