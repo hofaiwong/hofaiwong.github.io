@@ -1,0 +1,12 @@
+#USING CHOROPLETHR - DOESN'T ZOOM IN TO NYC
+# install.packages("devtools")
+library(devtools)
+install_github("choroplethr", "trulia")
+library(choroplethr)
+# install.packages("zipcode")
+# install.packages("choroplethrMaps")
+library(choroplethrMaps)
+data(zipcode, package="zipcode", envir=environment())
+mean_score_by_zip$zipcode = gsub('7005','07005',mean_score_by_zip$zipcode)
+colnames(mean_score_by_zip) = c('region','value')
+zip_map(mean_score_by_zip, buckets = 1, zoom = 'new york')
