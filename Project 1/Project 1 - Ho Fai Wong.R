@@ -147,33 +147,42 @@ restaurantClosingRatio.gg #Overall restaurant closing ratio by borough
 
 
 ##########################
-####     Relosings    ####
+####     Reclosings   ####
 ##########################
 
-temp =  inspections[inspections$action %in% c('closed','reclosed'),] %>%
-  group_by(., camis, boro, action) %>%
+#Create list of all unique restaurants that were closed at least once
+temp =  inspections[inspections$action %in% c('closed','reclosed'),c('camis','boro','action','zipcode')] %>%
+  group_by(., camis, boro, action, zipcode) %>%
   summarize(., count = n())
-  
-reclosingsByID = dcast(temp, camis + boro ~ temp$action)
+reclosingsByID = dcast(temp, camis + boro + zipcode ~ temp$action)
 
-closedByBoro = group_by(reclosingsByID[reclosingsByID$closed > 0,], boro) %>%
+#Summarize counts by borough of restaurants that were closed, closed once only, closed more than once
+#---------> why are there 6 NA?
+closedByBoro = reclosingsByID[reclosingsByID$closed > 0,] %>%
+  group_by(., boro) %>%
   summarize(., closed = n())
-closedOnceByBoro = group_by(reclosingsByID[reclosingsByID$closed == 1,], boro) %>%
+closedOnceByBoro = reclosingsByID[reclosingsByID$closed == 1,] %>%
+  group_by(., boro) %>%
   summarize(., closed = n())
-closedMoreThanOnceByBoro = group_by(reclosingsByID[reclosingsByID$closed > 1,], boro) %>%
+closedMoreThanOnceByBoro = reclosingsByID[reclosingsByID$closed > 1,] %>%
+  group_by(., boro) %>%
   summarize(., closed = n())
 
 #Combine into one table
-reclosingsByBoro = cbind(closedByBoro, closedOnceByBoro[,2], closedMoreThanOnceByBoro[,2]) 
+reclosingsByBoro = cbind(closedByBoro, closedOnceByBoro[,2], closedMoreThanOnceByBoro[,2])  
 colnames(reclosingsByBoro) = c('boro','total_closed','closed_once','closed_more_than_once')
 reclosingsByBoro$ratioClosedMoreThanOnce = reclosingsByBoro$closed_more_than_once / reclosingsByBoro$total_closed
 reclosingsByBoro
 
+#Ratio of restaurants by borough that were closed more than once out of restaurants that were closed at least once
 reclosingRatio.gg = ggplot (data = reclosingsByBoro[!is.na(reclosingsByBoro$boro),], aes (x = reorder(boro, -ratioClosedMoreThanOnce), y = ratioClosedMoreThanOnce)) + 
   geom_bar(stat='identity') +
   xlab("Borough") + ylab("Repeat closing ratio") + 
   ggtitle('Ratio of repeat closures by Borough')
 reclosingRatio.gg #Ratio of establishments closed more than once by borough
+
+#Map of closures
+
 
 
 
@@ -186,11 +195,10 @@ reclosingRatio.gg #Ratio of establishments closed more than once by borough
 #   ggtitle("Count of closings over time by borough")
 # closings.gg
 
-closingDensity.gg = ggplot (data = closings, aes (x = inspection.date)) + 
+closingDensity.gg = ggplot (data = inspections[inspections$action %in% c('closed','reclosed'),], aes (x = inspection.date)) + 
   geom_density(aes(color = boro)) + 
-  xlab("Inspection Date") + ylab("Density of closings") + 
+  labs(title='Density of closings over time by borough', x='Inspection Date', y='Density of closings')
   scale_colour_discrete(name="Borough") + 
-  ggtitle("Density of closings over time by borough")
 closingDensity.gg
 
 # inspections.gg = ggplot (data = inspections, aes (x = inspection.date)) + 
