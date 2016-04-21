@@ -48,8 +48,8 @@ raw.df = raw.df[raw.df$score >= 0,] #Eliminate rows with a negative score ----> 
 ###########################
 
 #Creating table for unique restaurants
-restaurants = unique(select(raw.df, camis, boro, zipcode, cuisine))
-#ggplot(data = restaurants, aes(x=reorder(boro, boro, function(x)-length(x)))) + geom_bar()
+restaurants = unique(select(latest, camis, boro, zipcode, cuisine, score, new_grade))
+#ggplot(data = restaurants, aes(x=reorder(boro, boro, function(x)-length(x)))) + geom_bar(aes(fill=new_grade))
 
 #Creating table for unique inspections
 inspections = unique(select(raw.df, camis, boro, zipcode, cuisine, inspection.date, action, score))
@@ -116,24 +116,37 @@ zip_choropleth(avgbyzip,
 #### Closings by boro ####
 ##########################
 
-###Summarise closings, reclosings and inspections by borough and month/year
-inspectionsByMonth = inspections %>%
-  group_by(., boro, yearmon) %>%
-  summarise(., inspections=n())
+# ###Summarise closings, reclosings and inspections by borough and month/year
+# inspectionsByMonth = inspections %>%
+#   group_by(., boro, yearmon) %>%
+#   summarise(., inspections=n())
+# 
+# closingsByMonth = filter(inspections, action %in% c('closed','reclosed')) %>%
+#   group_by(., boro, yearmon) %>%
+#   summarise(., closings=n())
+# 
+# reclosingsByMonth = filter(inspections, action=='reclosed') %>%
+#   group_by(., boro, yearmon) %>%
+#   summarise(., reclosings=n())
+# 
+# ###Ratio of inspections that lead to closings by borough
+# inspectionClosingSummary = cbind(summarize(group_by(closingsByMonth, boro), closings = sum(closings)), 
+#                      summarize(group_by(reclosingsByMonth, boro), reclosings = sum(reclosings))[,2],
+#                      summarize(group_by(inspectionsByMonth, boro), inspections = sum(inspections))[,2])
+# inspectionClosingSummary = mutate(inspectionClosingSummary, ratio = closings / inspections)
 
-closingsByMonth = filter(inspections, action %in% c('closed','reclosed')) %>%
-  group_by(., boro, yearmon) %>%
-  summarise(., closings=n())
 
-reclosingsByMonth = filter(inspections, action=='reclosed') %>%
-  group_by(., boro, yearmon) %>%
-  summarise(., reclosings=n())
 
-###Ratio of inspections that lead to closings by borough
-inspectionClosingSummary = cbind(summarize(group_by(closingsByMonth, boro), closings = sum(closings)), 
-                     summarize(group_by(reclosingsByMonth, boro), reclosings = sum(reclosings))[,2],
-                     summarize(group_by(inspectionsByMonth, boro), inspections = sum(inspections))[,2])
-inspectionClosingSummary = mutate(inspectionClosingSummary, ratio = closings / inspections)
+
+#########REPLACE WITH THIS:
+inspectionClosingSummary = inspections %>%
+  group_by(., boro) %>%
+  summarise(., 
+            closings = sum(action == 'closed' | action == 'reclosed'),
+            reclosings = sum(action == 'reclosed'),
+            inspections = n(),
+            ratio = closings / inspections
+  )
 
 inspectionClosingRatio.gg = ggplot(data=inspectionClosingSummary, aes(x=reorder(boro, -ratio), y=ratio)) + 
   geom_bar(stat='identity') +
