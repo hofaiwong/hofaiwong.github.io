@@ -26,8 +26,10 @@ raw.df$record.date = as.Date(raw.df$record.date, "%m/%d/%Y")
 raw.df$phone = as.double(raw.df$phone)
 raw.df$boro = factor(raw.df$boro, levels(factor(raw.df$boro))[c(1:3,5:6,4)])
 levels(raw.df$boro) = c('Bronx','Brooklyn','Manhattan','Queens','Staten Island','Missing')
+
+raw.df$cuisine = gsub(pattern = 'Latin \\(Cuban, Dominican, Puerto Rican, South \\& Central American\\)', replacement = 'Latin', x = raw.df$cuisine, ignore.case = F)
+raw.df$cuisine = gsub(pattern = 'CafÃ©/Coffee/Tea', replacement = 'Cafe/Coffee/Tea', x = raw.df$cuisine, ignore.case = F)
 raw.df$cuisine = factor(raw.df$cuisine, levels(factor(raw.df$cuisine))[c(1:55,57,59:84,58,56)]) #Moving N/A and Other to the bottom of cuisine factors
-raw.df$zipcode = clean.zipcodes(raw.df$zipcode) #Turn zip to string with clean format e.g. preceding 0s
 
 raw.df$action = gsub(pattern = "Violations were cited in the following area\\(s\\).", replacement = "violations", x = raw.df$action, ignore.case = F)
 raw.df$action = gsub(pattern = "No violations were recorded at the time of this inspection.", replacement = "no violations", x = raw.df$action, ignore.case = F)
@@ -35,30 +37,30 @@ raw.df$action = gsub(pattern = "Establishment re-opened by DOHMH", replacement =
 raw.df$action = gsub(pattern = "Establishment Closed by DOHMH.  violationsand those requiring immediate action were addressed.", replacement = "closed", x = raw.df$action, ignore.case = F)
 raw.df$action = gsub(pattern = "Establishment re-closed by DOHMH", replacement = "reclosed", x = raw.df$action, ignore.case = F)
 
+raw.df$zipcode = clean.zipcodes(raw.df$zipcode) #Turn zip to string with clean format e.g. preceding 0s
 raw.df$boro[raw.df$zipcode==11249] = 'Brooklyn' #Fill missing data...
 raw.df = raw.df[raw.df$zipcode!='07005',] #Eliminate NJ inspection...
 raw.df = raw.df[raw.df$boro != 'Missing',] #Eliminate remaining rows with boro == 'Missing'; confirmed that none are in NYC
 raw.df = raw.df[raw.df$inspection.date > '1900-01-01',] #Eliminate rows where the restaurant hasn't been inspected yet
 raw.df = raw.df[!is.na(raw.df$score),] #Eliminate rows without a score
-raw.df = raw.df[raw.df$score >= 0,] #Eliminate rows with a negative score ----> PENDING
+raw.df = raw.df[raw.df$score >= 0,] #Eliminate rows with a negative score
 
+raw.df$yearmon = as.Date(paste("1",strftime(raw.df$inspection.date, "%m"), strftime(raw.df$inspection.date, "%Y"), sep="."), 
+                         format="%d.%m.%Y")
+raw.df$new_grade = ifelse(raw.df$score < 0, 'Negative', 
+                               ifelse(raw.df$score < 14 , 'A', 
+                                      ifelse(raw.df$score < 28, 'B', 'C'))) #Assign grades based on scores (existing data may have score but no grade)
 
 ###########################
 ###  Scores by borough  ###
 ###########################
 
-#Creating table for unique restaurants
-restaurants = unique(select(latest, camis, boro, zipcode, cuisine, score, new_grade))
+#Creating tables for analysis 
+inspections = unique(select(raw.df, camis, boro, zipcode, cuisine, inspection.date, action, score, new_grade, yearmon)) #unique inspections
+latest = merge(aggregate(inspection.date ~ camis, inspections, max), inspections) #latest scores only
+restaurants = unique(select(latest, camis, boro, zipcode, cuisine, score, new_grade)) #unique restaurants
 #ggplot(data = restaurants, aes(x=reorder(boro, boro, function(x)-length(x)))) + geom_bar(aes(fill=new_grade))
-
-#Creating table for unique inspections
-inspections = unique(select(raw.df, camis, boro, zipcode, cuisine, inspection.date, action, score))
-inspections$yearmon = as.Date(paste("1",strftime(inspections$inspection.date, "%m"), strftime(inspections$inspection.date, "%Y"), sep="."), format="%d.%m.%Y")
-inspections$new_grade = ifelse(inspections$score < 0, 'Negative', ifelse(inspections$score < 14 , 'A', ifelse(inspections$score < 28, 'B', 'C'))) #Assign grades based on scores (existing data may have score but no grade)
 #ggplot(data = inspections, aes(x=reorder(boro, boro, function(x)-length(x)))) + geom_bar()
-
-#Creating table for latest scores only
-latest = merge(aggregate(inspection.date ~ camis, inspections, max), inspections)
 
 #Visualize current state by borough
 ggplot(data=latest, aes(x=reorder(boro, boro, function(x)-length(x)))) + 

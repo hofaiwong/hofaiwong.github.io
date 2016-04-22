@@ -16,12 +16,12 @@ restByCuisineFiltered = restaurants %>%
   group_by(., cuisine) %>%
   summarise(., count=n()) %>%
   arrange(., desc(count)) %>%
-  top_n(., 10, count)
+  top_n(., 20, count)
 
 sum(restByCuisineFiltered$count) / sum(restByCuisine$count) #coverage of restaurants after filtering
 
-restaurantsFiltered = semi_join(restaurants, restByCuisineFiltered, by = 'cuisine') #Will keep top 10 covering 64%
-inspectionsFiltered = semi_join(inspections, restByCuisineFiltered, by = 'cuisine')
+restaurantsFiltered = tbl_df(semi_join(restaurants, restByCuisineFiltered, by = 'cuisine')) #Will keep top xx covering yy%
+inspectionsFiltered = tbl_df(semi_join(inspections, restByCuisineFiltered, by = 'cuisine'))
 
 ####Visualize current state by cuisine
 
@@ -48,18 +48,18 @@ ggplot(data=restaurantsFiltered, aes(x=reorder(cuisine, cuisine, function(x) len
 # ggplot(data=restaurantsFiltered, aes(x=score)) + 
 #   geom_histogram(binwidth = 2, aes(fill = cuisine))
 
-ggplot(data=restaurantsFiltered, aes(x = score)) + 
-  geom_freqpoly(aes(color=cuisine), binwidth=2) + 
-  coord_cartesian(xlim=c(0,40)) + 
-  labs(title='Restaurants by score and cuisine', x='Score', y='Restaurants') + 
-  scale_colour_discrete(name="Cuisine")
+# ggplot(data=restaurantsFiltered, aes(x = score)) + 
+#   geom_freqpoly(aes(color=cuisine), binwidth=2) + 
+#   coord_cartesian(xlim=c(0,40)) + 
+#   labs(title='Restaurants by score and cuisine', x='Score', y='Restaurants') + 
+#   scale_colour_discrete(name="Cuisine")
 
 ggplot(data=restaurantsFiltered, aes (x=score)) + 
   geom_density(aes(color=cuisine)) + 
   coord_cartesian(xlim=c(0,40)) +
   labs(title='Density of restaurants by score and cuisine', x='Score', y='Density') + 
   scale_colour_discrete(name="Cuisine")
-
+#----------> Change to line instead of box in legend
 
 #############################
 #### Closings by cuisine ####
@@ -88,159 +88,121 @@ inspectionClosingSummaryByCuisine = inspectionsFiltered %>%
             reclosings = sum(action == 'reclosed'),
             inspections = n(),
             ratio = closings / inspections
-            )
+  )
 
-inspectionClosingRatioByCuisine.gg = ggplot(data=inspectionClosingSummaryByCuisine, aes(x=reorder(cuisine, ratio), y=ratio)) + 
+inspectionClosingRatioByCuisine.gg = 
+  ggplot(data=inspectionClosingSummaryByCuisine, aes(x=reorder(cuisine, ratio), y=ratio)) + 
   geom_bar(stat='identity') +
   labs(title='Inspection closing ratio by cuisine', x='Cuisine', y='Inspection closing ratio') +
   coord_flip()
-inspectionClosingRatioByCuisine.gg #Overall inspection closing ratio by borough
+inspectionClosingRatioByCuisine.gg #Overall inspection closing ratio by cuisine
 
 
-############ CONTINUE HERE
+###Ratio of inspections that lead to closings by cuisine - with boro
+inspectionClosingSummaryByCuisineBoro = inspectionsFiltered %>%
+  group_by(., cuisine, boro) %>%
+  summarise(., 
+            closings = sum(action == 'closed' | action == 'reclosed'),
+            reclosings = sum(action == 'reclosed'),
+            inspections = n(),
+            ratio = closings / inspections
+            )
+
+#Refactor cuisines to keep order in plot as previous plot
+inspectionClosingSummaryByCuisine$cuisine = factor(inspectionClosingSummaryByCuisine$cuisine)
+newFactor = levels(inspectionClosingSummaryByCuisine$cuisine)[order(-rank(inspectionClosingSummaryByCuisine$ratio))]
+inspectionClosingSummaryByCuisineBoro$cuisine = factor(inspectionClosingSummaryByCuisineBoro$cuisine, levels=rev(newFactor))
+
+inspectionClosingRatioByCuisineBoro.gg = ggplot(data=inspectionClosingSummaryByCuisineBoro, aes(x=cuisine, y=ratio)) + 
+  geom_bar(stat='identity', aes(fill=boro)) + 
+  facet_grid(~ boro) +
+  labs(title='Inspection closing ratio by cuisine and borough', x='Cuisine', y='Inspection closing ratio') +
+  coord_flip()
+#---->move legend to bottom
+inspectionClosingRatioByCuisineBoro.gg #Overall inspection closing ratio by cuisine and borough
 
 
 
-###Ratio of unique restaurant that closed by borough
-restaurantClosingSummary = merge(
-      summarize(group_by(unique(inspections[inspections$action %in% c('closed','reclosed'),c('camis','boro')]), boro), unique_camis_closed = n()),
-      summarize(group_by(unique(inspections[,c('camis','boro')]), boro), total_camis = n()),
-      by = 'boro')
-restaurantClosingSummary$ratio = restaurantClosingSummary$unique_camis_closed / restaurantClosingSummary$total_camis
-restaurantClosingSummary #Closings by count of camis and % of repeat offenders
 
-restaurantClosingRatio.gg = ggplot(data=restaurantClosingSummary, aes(x=reorder(boro, -ratio), y=ratio)) + 
+
+###Ratio of unique restaurant that closed by cuisine
+restaurantClosingSummaryByCuisine = inspectionsFiltered %>%
+  group_by(., camis, cuisine) %>%
+  summarise(., n = sum(action %in% c('closed','reclosed'))) %>%
+  group_by(., cuisine) %>%
+  summarise(., unique_camis_closed = sum(n>0), total_camis = n(), ratio = unique_camis_closed / total_camis)
+restaurantClosingSummaryByCuisine #Closings by count of camis and % of repeat offenders
+
+restaurantClosingRatioByCuisine.gg = ggplot(data=restaurantClosingSummaryByCuisine, aes(x=reorder(cuisine, ratio), y=ratio)) + 
   geom_bar(stat='identity') +
-  labs(title='Restaurant closing ratio by borough', x='Borough', y='Restaurant closing ratio')
-restaurantClosingRatio.gg #Overall restaurant closing ratio by borough
+  labs(title='Restaurant closing ratio by cuisine', x='Cuisine', y='Restaurant closing ratio') +
+  coord_flip()
+restaurantClosingRatioByCuisine.gg #Overall restaurant closing ratio by cuisine
 
 
-############################
-#### Reclosings by boro ####
-############################
+
+###Ratio of unique restaurant that closed by cuisine - with boro
+restaurantClosingSummaryByCuisineBoro = inspectionsFiltered %>%
+  group_by(., camis, cuisine, boro) %>%
+  summarise(., n = sum(action %in% c('closed','reclosed'))) %>%
+  group_by(., cuisine, boro) %>%
+  summarise(., unique_camis_closed = sum(n>0), total_camis = n(), ratio = unique_camis_closed / total_camis)
+restaurantClosingSummaryByCuisineBoro #Unique closings by count of camis and % of repeat offenders
+
+#Refactor cuisines to keep order in plot as previous plot
+restaurantClosingSummaryByCuisine$cuisine = factor(restaurantClosingSummaryByCuisine$cuisine)
+newFactor = levels(restaurantClosingSummaryByCuisine$cuisine)[order(-rank(restaurantClosingSummaryByCuisine$ratio))]
+restaurantClosingSummaryByCuisineBoro$cuisine = factor(restaurantClosingSummaryByCuisineBoro$cuisine, levels=rev(newFactor))
+
+restaurantClosingRatioByCuisineBoro.gg = ggplot(data=restaurantClosingSummaryByCuisineBoro, aes(x=cuisine, y=ratio)) + 
+  geom_bar(stat='identity', aes(fill=boro)) + 
+  facet_grid(~ boro) +
+  labs(title='Restaurant closing ratio by cuisine and borough', x='Cuisine', y='Restaurant closing ratio') +
+  coord_flip()
+restaurantClosingRatioByCuisineBoro.gg #Overall restaurant closing ratio by cuisine and borough
+
+
+
+
+
+###############################
+#### Reclosings by cuisine ####
+##############################
 
 #Create list of all unique restaurants that were closed at least once (we are considering closings, not reclosings as part of the same inspection cycle)
-closedRestaurants =  inspections[inspections$action == 'closed',c('camis','boro','zipcode')] %>%
-  group_by(., camis, boro, zipcode) %>%
-  summarize(., count = n())
+reclosingsByCuisine = unique(
+  inspectionsFiltered %>%
+    filter(., action == 'closed') %>%
+    select(., camis, cuisine, inspection.date)) %>%
+  group_by(., camis, cuisine) %>%
+  summarise(., closures = n()) %>% 
+  group_by(., cuisine) %>%
+  summarise(., closed_once = sum(closures==1), closed_more_than_once = sum(closures>1), total_closed = n()) %>%
+  mutate(., ratio = closed_more_than_once / total_closed) 
+reclosingsByCuisine
 
-#Summarize counts by borough of restaurants that were closed, closed once only, closed more than once
-closedByBoro = closedRestaurants %>%
-  group_by(., boro) %>%
-  summarize(., count = n())
-closedMoreThanOnceByBoro = closedRestaurants[closedRestaurants$count > 1,] %>%
-  group_by(., boro) %>%
-  summarize(., count = n())
-
-#Combine into one table by borough
-reclosingsByBoro = cbind(closedByBoro, closedMoreThanOnceByBoro[,2])  
-colnames(reclosingsByBoro) = c('boro','total_closed','closed_more_than_once')
-reclosingsByBoro$ratioClosedMoreThanOnce = reclosingsByBoro$closed_more_than_once / reclosingsByBoro$total_closed
-reclosingsByBoro
-
-#Ratio of restaurants by borough that were closed more than once out of restaurants that were closed at least once
-ggplot (data = reclosingsByBoro, aes (x = reorder(boro, -ratioClosedMoreThanOnce), y = ratioClosedMoreThanOnce)) + 
+ggplot(data = reclosingsByCuisine, aes (x = reorder(cuisine, ratio), y = ratio)) + 
   geom_bar(stat='identity') +
-  labs(title='Ratio of repeat closures by Borough', x='Borough', y='Ratio of repeat closings')
-
-
-
-############################
-#### Re/closings by zip ####
-############################
-
-#Summarize counts by zip of restaurants that were closed, closed once only, closed more than once
-closedByZip = closedRestaurants %>%
-  group_by(., zipcode) %>%
-  summarize(., count = n())
-colnames(closedByZip) = c('region','value')
-
-closedMoreThanOnceByZip = closedRestaurants[closedRestaurants$count > 1,] %>%
-  group_by(., zipcode) %>%
-  summarize(., count = n())
-colnames(closedMoreThanOnceByZip) = c('region','value')
-
-#Map of closures by zipcode
-zip_choropleth(closedByZip, 
-               zip_zoom = adjusted_zips,
-               title="Closed restaurants by zipcode",
-               legend="Restaurants",
-               num_colors = 5)
-
-zip_choropleth(closedMoreThanOnceByZip, 
-               zip_zoom = adjusted_zips,
-               title="Repeatedly closed restaurants by zipcode",
-               legend="Restaurants",
-               num_colors = 5)
-#----------> Fix legend and colour
+  labs(title='Ratio of repeat closures by cuisine', x='Cuisine', y='Ratio of repeat closings') +
+  coord_flip()
 
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-###########################
-#### Trends by borough ####
-###########################
-
-####Need trend of closing ratio over time
-
-###Graphs for closings and inspections over time by borough
-# ggplot (data = inspections[inspections$action %in% c('closed','reclosed'),], aes (x = inspection.date)) +
-#   geom_freqpoly(aes(color = boro), binwidth = 90) + #confirm bin for dates
-#   labs(title='Count of closings over time by borough', x='Inspection date', y='Count of closings')
-#   scale_colour_discrete(name="Borough")
-
-ggplot (data = inspections[inspections$action %in% c('closed','reclosed'),], aes (x = inspection.date)) + 
-  geom_density(aes(color = boro)) + 
-  labs(title='Density of closings over time by borough', x='Inspection date', y='Density of closings')
-  scale_colour_discrete(name="Borough")
-
-# ggplot (data = inspections, aes (x = inspection.date)) + 
-#   geom_freqpoly(aes(color = boro), binwidth=30) + 
-#   labs(title = 'Count of inspections over time by borough', x='Inspection date', y='Count of inspections') +
-#   scale_colour_discrete(name="Borough")
-
-ggplot (data = inspections, aes (x = inspection.date)) + 
-  geom_density(aes(color = boro)) + 
-  labs(title = 'Density of inspections over time by borough', x='Inspection date', y='Density of inspections') +
-  scale_colour_discrete(name="Borough")
-
-# inspectionSummaryByMonth = merge(cntInspections, cntClosings, by = c('boro','yearmon'), all=T)
-# inspectionSummaryByMonth = merge(inspectionSummaryByMonth, cntReclosings, by = c('boro','yearmon'), all=T)
-# inspectionSummaryByMonth = merge(inspectionSummaryByMonth, cntReopenings, by = c('boro','yearmon'), all=T)
-# inspectionSummaryByMonth$closingRatio = inspectionSummaryByMonth$closings / inspectionSummaryByMonth$inspections
+# #Unique restaurant closings by cuisine - with borough
+# reclosingsByCuisineBoro = unique(
+#   inspectionsFiltered %>%
+#     filter(., action == 'closed') %>%
+#     select(., camis, cuisine, inspection.date, boro)) %>%
+#   group_by(., camis, cuisine, boro) %>%
+#   summarise(., closures = n()) %>% 
+#   group_by(., cuisine, boro) %>%
+#   summarise(., closed_once = sum(closures==1), closed_more_than_once = sum(closures>1), total_closed = n()) %>%
+#   mutate(., ratio = closed_more_than_once / total_closed) 
+# reclosingsByCuisineBoro
 # 
-# closingRatio.gg = ggplot(data=inspectionSummaryByMonth[!is.na(inspectionSummaryByMonth$closingRatio),], aes(x=yearmon)) +
-#   geom_line(aes(y=closingRatio, color = boro)) +
-#   xlab("Inspection Date") + ylab("Closing ratio") +
-#   scale_colour_discrete(name="Borough") +
-#   ggtitle("Closing ratio by month by borough")
-# closingRatio.gg
-# # ####################### => Too hard to read
-
-
-
-
-
-#Trend of score by borough
-
-
-#By Time
-ggplot (data = latest, aes(x = inspection.date, y = score)) + geom_point()
-
-#By aggregate stat
-ggplot(data = mean_score_by_boro, aes(x=boro, y = latest_mean_score)) + geom_point()
-
-#Current graphs by cuisine
-ggplot(data=latest, aes(x=reorder(latest$cuisine.description,latest$score), y=latest$score)) + coord_flip() + geom_bar(stat='identity')
+# ggplot(data = reclosingsByCuisineBoro, aes (x = reorder(cuisine, ratio), y = ratio)) + 
+#   geom_bar(stat='identity', aes(fill=boro)) +
+#   facet_grid(~boro) +
+#   labs(title='Ratio of repeat closures by cuisine and borough', x='Cuisine', y='Ratio of repeat closings') +
+#   coord_flip()
