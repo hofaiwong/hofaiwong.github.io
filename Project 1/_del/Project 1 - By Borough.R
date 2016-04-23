@@ -199,6 +199,39 @@ ggplot (data = reclosingsByBoro, aes (x = reorder(boro, -ratioClosedMoreThanOnce
 
 
 
+
+
+# ###########################
+# #### Reclosings by zip ####
+# ###########################
+# 
+# #Total counts by zip of establishments that were closed or closed more than once
+# closedByZip = closedEstablishments %>%
+#   group_by(., zipcode) %>%
+#   summarize(., value = n()) %>%
+#   rename(., region = zipcode)
+# 
+# closedMoreThanOnceByZip = closedEstablishments[closedEstablishments$count > 1,] %>%
+#   group_by(., zipcode) %>%
+#   summarize(., value = n()) %>%
+#   rename(., region = zipcode)
+# 
+# #Map of closures by zipcode
+# zip_choropleth(closedByZip, 
+#                zip_zoom = adjusted_zips,
+#                title="Closed establishments by zipcode",
+#                num_colors = 5) + 
+#   scale_fill_brewer(palette='OrRd', 
+#                     name='Closed \nEstablishments', 
+#                     labels = c("1 - 3", "4 - 7", "8 - 11", "12 - 17", "18+"))
+# 
+# zip_choropleth(closedMoreThanOnceByZip, 
+#                zip_zoom = adjusted_zips,
+#                title="Repeatedly closed establishments by zipcode",
+#                num_colors = 5) + 
+#   scale_fill_brewer(palette='OrRd', name='Establishments')
+
+
 ############################
 #### Re/closings by zip ####
 ############################

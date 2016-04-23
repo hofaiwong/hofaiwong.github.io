@@ -1,7 +1,4 @@
 #Project 1 - By cuisine
-library(plyr)
-library(dplyr)
-library(ggplot2)
 ###########################
 ###  Scores by cuisine  ###
 ###########################
